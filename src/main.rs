@@ -1,52 +1,172 @@
+use clap::Parser;
 use gio::prelude::*;
-use glib::{Variant, DBus};
-use clap::{App, Arg};
+use gio::{ DBusActionGroup, Application };
+use std::io::{self, Read };
+use std::sync::{Arc, Mutex, Condvar};
+use std::thread::sleep;
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let matches = App::new("dmenu")
-                         .arg(Arg::with_name("title")
-                                   .long("p")
-                                   .takes_value(true))
-                         .get_matches();
+#[derive(Parser)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Name of the person to greet
+    #[arg(short = 'p', long, default_value = "dmenu:")]
+    title: String,
 
-    let title = matches.value_of("title").unwrap_or("Default Title");
+}
 
-    // Connect to the org.gnome.Shell D-Bus service
-    let shell = DBus::session().connection().get_object("org.gnome.Shell")?;
-    let mut remote_group = shell.get_object("xyzactiongroup")?;
+fn init_group() -> DBusActionGroup {
+    let bus = gio::functions::bus_get_sync(
+        gio::BusType::Session,
+        None::<&gio::Cancellable>
+    ).unwrap();
+    let remote_group = DBusActionGroup::get(
+        &bus, //&app.dbus_connection().unwrap(),
+        Some("org.gnome.Shell"),
+        "/xyz/GustavoPeredo/DynamicMenu",
+    );
+    remote_group
+}
 
-    // Set up the action group
-    remote_group.set_name("My Dynamic Menu");
-    remote_group.set_description("A dynamic menu with tasks.");
+fn main_thread(app: &Application) {
+    let matches = Args::parse();
+    let title = matches.title;
 
-    // Define the actions
-    let param_action = remote_group.add_action("paramAction", Variant::new("as", vec![]));
+    let bus = gio::functions::bus_get_sync(
+        gio::BusType::Session,
+        None::<&gio::Cancellable>
+    ).unwrap();
+    let remote_group = init_group();
+        sleep(std::time::Duration::from_secs(1));
+        remote_group.list_actions();
+sleep(std::time::Duration::from_secs(1));
+        remote_group.list_actions();
+sleep(std::time::Duration::from_secs(1));
+        remote_group.list_actions();
+sleep(std::time::Duration::from_secs(1));
+        remote_group.list_actions();
+    remote_group.
+        change_action_state("stateAction", &"custom2".to_variant());
+    
 
-    // Read input from standard input
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input)?;
+    let variant = vec![title, read_from_stdin()].to_variant();
+    remote_group
+        .activate_action("paramAction", Some(&variant));
 
-    // Split the input into lines
-    let lines = input.split('\n').filter(|line| !line.is_empty()).map(|line| line.to_string());
+    
+    
 
-    // Create a variant containing the list of tasks
-    let tasks = Variant::new("av", lines.collect::<Vec<String>>());
 
-    // Activate the parameterized action
-    remote_group.activate_action("paramAction", &tasks)?;
+    let condvar = Arc::new((Mutex::new(false), Condvar::new()));
+    let condvar_call = Arc::clone(&condvar);
 
-    // Wait for the "action-state-changed" signal
-    let main_context = glib::MainContext::default();
-    let _source_id = remote_group.connect_local("action-state-changed", false, move |_, action_name, state| {
-        println!("{} is now {}", action_name, state.unpack());
-        // Add code here to close the application if needed
-        // For example:
-        // std::process::exit(0);
-        glib::Continue(true)
-    })?;
+    remote_group.activate_action("stateAction", Some(&"".to_variant()));
+    remote_group.
+        change_action_state("stateAction", &"custom2".to_variant());
 
-    // Run the main loop
-    main_context.iterate(None, true)?;
 
-    Ok(())
+
+    println!("{:?} {:?} {:?}",
+        remote_group.is_action_enabled("paramAction"),
+        remote_group.is_action_enabled("stateAction"),
+        remote_group.list_actions()
+    );
+
+    remote_group
+        .connect_action_added(None,
+            |_,_| {
+                println!("action-added");
+            }
+        );
+
+    remote_group
+        .connect_action_removed(None, 
+            |_,_| {
+                println!("action-removed");
+            }
+        );
+
+        sleep(std::time::Duration::from_secs(1));
+
+    println!("{:?} {:?} {:?}",
+        remote_group.has_action("paramAction"),
+        remote_group.has_action("stateAction"),
+        remote_group.list_actions()
+    );
+
+    remote_group.
+        change_action_state("stateAction", &"custom".to_variant());
+
+    println!("{:?} {:?} {:?}",
+        remote_group.has_action("paramAction"),
+        remote_group.has_action("stateAction"),
+        remote_group.list_actions()
+    );
+    
+    remote_group
+        .connect_action_state_changed(None,
+            move |_group, _action, state| {
+                println!("action-state-changed: {:?}", state);
+                let (lock, cvar) = &*condvar_call;
+                let mut done = lock.lock().unwrap();
+                *done = true;
+                cvar.notify_one();
+            }
+        );
+    remote_group.
+        change_action_state("stateAction", &"custom2".to_variant());
+
+    println!("{:?} {:?} {:?}",
+        remote_group.has_action("paramAction"),
+        remote_group.has_action("stateAction"),
+        remote_group.list_actions()
+    );
+
+    
+
+    println!("{:?} {:?} {:?}",
+        remote_group.has_action("paramAction"),
+        remote_group.has_action("stateAction"),
+        remote_group.list_actions()
+    );
+    
+
+    let (lock, cvar) = &*condvar;
+    let mut done = lock.lock().unwrap();
+    while !*done {
+        loop {
+        println!("{:?} {:?} {:?}",
+        remote_group.has_action("paramAction"),
+        remote_group.has_action("stateAction"),
+        remote_group.list_actions()
+        );
+
+
+        sleep(std::time::Duration::from_secs(1));
+
+    }
+        done = cvar.wait(done).unwrap();
+    }
+}
+
+
+fn main() -> glib::ExitCode {
+
+    let app = Application::new(
+        Some("xyz.GustavoPeredo.DynamicMenu"),
+        gio::ApplicationFlags::FLAGS_NONE,
+    );
+
+    app.connect_activate(main_thread);
+
+    app.run()
+}
+
+fn read_from_stdin() -> String {
+    let stdin = io::stdin();
+    let mut buffer = String::new();
+    if atty::is(atty::Stream::Stdin) {
+        return buffer;
+    }
+    stdin.lock().read_to_string(&mut buffer).unwrap();
+    buffer
 }

@@ -1,0 +1,8 @@
+{
+  "name": "dmenu",
+  "description": "An extensible menu inspired by dmenu",
+  "uuid": "dmenu@GustavoPeredo.xyz",
+  "shell-version": [
+    "45"
+  ]
+}
